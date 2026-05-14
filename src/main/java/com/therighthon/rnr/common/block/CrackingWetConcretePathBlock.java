@@ -1,6 +1,5 @@
 package com.therighthon.rnr.common.block;
 
-import com.therighthon.rnr.RoadsAndRoofs;
 import com.therighthon.rnr.common.RNRTags;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -19,18 +18,16 @@ import net.dries007.tfc.util.Helpers;
 
 public class CrackingWetConcretePathBlock extends WetConcretePathBlock
 {
-    private final int maxJointDistance = 3;
-
-
+    public static final int MAX_JOINT_DISTANCE = 3;
     public static final IntegerProperty DISTANCE_X = RNRBlockStateProperties.DISTANCE_X;
     public static final IntegerProperty DISTANCE_Z = RNRBlockStateProperties.DISTANCE_Z;
+
     private final Block base;
     private final BlockState baseState;
 
     public CrackingWetConcretePathBlock(ExtendedProperties properties)
     {
         super(properties.speedFactor(getDefaultSpeedFactor()).randomTicks());
-        //TODO: maybe remove?
         this.registerDefaultState(this.defaultBlockState().setValue(DISTANCE_X, 1).setValue(DISTANCE_Z, 1));
         this.base = Blocks.AIR; // These are unused, fields are redirected
         this.baseState = Blocks.AIR.defaultBlockState();
@@ -46,14 +43,14 @@ public class CrackingWetConcretePathBlock extends WetConcretePathBlock
             long ticksSinceUpdate = counter.getTicksSinceUpdate();
             BlockState oldState = state;
             //Only update crack info within first 75% of drying process
-            if (ticksSinceUpdate < 0.75 * getTicksToDry())
+            if (ticksSinceUpdate < 0.75 * TICKS_TO_DRY)
             {
                 //Cracking X - Distance Update
                 final int oldDistanceX = state.getValue(DISTANCE_X);
                 int distanceX = updateDistanceX(level, pos);
                 if (distanceX != oldDistanceX)
                 {
-                    level.setBlockAndUpdate(pos, state.setValue(DISTANCE_X, Math.min(distanceX, maxJointDistance)));
+                    level.setBlockAndUpdate(pos, state.setValue(DISTANCE_X, Math.min(distanceX, MAX_JOINT_DISTANCE)));
                     counter.setLastUpdateTick(oldUpdateTick);
                 }
 
@@ -62,14 +59,14 @@ public class CrackingWetConcretePathBlock extends WetConcretePathBlock
                 int distanceZ = updateDistanceZ(level, pos);
                 if (distanceZ != oldDistanceZ)
                 {
-                    level.setBlockAndUpdate(pos, state.setValue(DISTANCE_Z, Math.min(distanceZ, maxJointDistance)));
+                    level.setBlockAndUpdate(pos, state.setValue(DISTANCE_Z, Math.min(distanceZ, MAX_JOINT_DISTANCE)));
                     counter.setLastUpdateTick(oldUpdateTick);
                 }
             }
             // Drying
-            else if (ticksSinceUpdate > getTicksToDry())
+            else if (ticksSinceUpdate > TICKS_TO_DRY)
             {
-                level.setBlockAndUpdate(pos, Math.max(state.getValue(DISTANCE_X), state.getValue(DISTANCE_Z)) >= maxJointDistance ? getOutputStateCracked(state) : getOutputState(state));
+                level.setBlockAndUpdate(pos, Math.max(state.getValue(DISTANCE_X), state.getValue(DISTANCE_Z)) >= MAX_JOINT_DISTANCE ? getOutputStateCracked(state) : getOutputState(state));
             }
 
             if (level.getBlockState(pos) != oldState)
@@ -148,7 +145,7 @@ public class CrackingWetConcretePathBlock extends WetConcretePathBlock
 
     private int updateDistanceX(LevelAccessor level, BlockPos pos)
     {
-        int distance = 1 + maxJointDistance;
+        int distance = 1 + MAX_JOINT_DISTANCE;
         BlockPos.MutableBlockPos mutablePos = new BlockPos.MutableBlockPos();
         for (Direction direction : new Direction[] {Direction.EAST, Direction.WEST})
         {
@@ -164,7 +161,7 @@ public class CrackingWetConcretePathBlock extends WetConcretePathBlock
 
     private int updateDistanceZ(LevelAccessor level, BlockPos pos)
     {
-        int distance = 1 + maxJointDistance;
+        int distance = 1 + MAX_JOINT_DISTANCE;
         BlockPos.MutableBlockPos mutablePos = new BlockPos.MutableBlockPos();
         for (Direction direction : new Direction[] {Direction.NORTH, Direction.SOUTH})
         {

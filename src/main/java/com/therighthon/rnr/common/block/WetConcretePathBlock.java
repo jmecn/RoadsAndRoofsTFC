@@ -9,6 +9,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
@@ -19,8 +20,9 @@ import net.dries007.tfc.common.blocks.ExtendedProperties;
 
 public class WetConcretePathBlock extends PathHeightDeviceBlock
 {
+    public final int TICKS_TO_DRY = 24000;
+
     private static final float defaultSpeedFactor = 0.7f;
-    private final int ticksToDry = 24000;
 
     public VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
         return BaseCourseHeightBlock.SHAPE;
@@ -40,13 +42,18 @@ public class WetConcretePathBlock extends PathHeightDeviceBlock
         TickCounterBlockEntity.reset(level, pos);
     }
 
-    //Based on minecraft pressure plates
-    //TODO: Would be swell if it didn't reset the dry timer
+    // Based on minecraft pressure plates
     public void entityInside(BlockState state, Level level, BlockPos pos, Entity entity) {
         if (!level.isClientSide) {
             if (entity instanceof LivingEntity)
             {
-                level.setBlock(pos, RNRBlocks.TRODDEN_WET_CONCRETE_ROAD.get().withPropertiesOf(state), 3);
+                level.getBlockEntity(pos, TFCBlockEntities.TICK_COUNTER.get()).ifPresent(counter -> {
+                    final long oldLastUpdateTick = counter.getLastUpdateTick();
+                    level.setBlock(pos, RNRBlocks.TRODDEN_WET_CONCRETE_ROAD.get().withPropertiesOf(state), 3);
+                    level.getBlockEntity(pos, TFCBlockEntities.TICK_COUNTER.get()).ifPresent(newCounter -> {
+                        newCounter.setLastUpdateTick(oldLastUpdateTick);
+                    });
+                });
             }
         }
     }
@@ -56,7 +63,7 @@ public class WetConcretePathBlock extends PathHeightDeviceBlock
 
         //Drying
         level.getBlockEntity(pos, TFCBlockEntities.TICK_COUNTER.get()).ifPresent(counter -> {
-            if (counter.getTicksSinceUpdate() > ticksToDry)
+            if (counter.getTicksSinceUpdate() > TICKS_TO_DRY)
             {
                 level.setBlockAndUpdate(pos, getOutputState(state));
 
@@ -74,8 +81,6 @@ public class WetConcretePathBlock extends PathHeightDeviceBlock
             }
         });
     }
-
-
 
     //TODO: Make this use actual recipes rather than hard-code?
     public BlockState getOutputState(BlockState input)
@@ -115,10 +120,5 @@ public class WetConcretePathBlock extends PathHeightDeviceBlock
     public boolean isRandomlyTicking(BlockState state)
     {
         return true;
-    }
-
-    public int getTicksToDry()
-    {
-        return ticksToDry;
     }
 }
