@@ -20,7 +20,7 @@ import net.dries007.tfc.common.blocks.ExtendedProperties;
 
 public class WetConcretePathBlock extends PathHeightDeviceBlock
 {
-    public final int TICKS_TO_DRY = 24000;
+    public static final int TICKS_TO_DRY = 24000;
 
     private static final float defaultSpeedFactor = 0.7f;
 
@@ -58,7 +58,6 @@ public class WetConcretePathBlock extends PathHeightDeviceBlock
         }
     }
 
-    //TODO: Pretty janky setup, but it does work for now
     public void tick(BlockState state, ServerLevel level, BlockPos pos, RandomSource random) {
 
         //Drying
@@ -72,7 +71,6 @@ public class WetConcretePathBlock extends PathHeightDeviceBlock
                 {
                     cursor.setWithOffset(pos, d);
                     final BlockState stateAt = level.getBlockState(cursor);
-                    //TODO: Could be cleaner if this class and the normal wet concrete class extended a single class
                     if (state.getBlock() instanceof CrackingWetConcretePathBlock || stateAt.getBlock() instanceof WetConcretePathControlJointBlock)
                     {
                         level.scheduleTick(cursor, stateAt.getBlock(), 20);

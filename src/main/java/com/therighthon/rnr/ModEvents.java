@@ -1,14 +1,20 @@
 package com.therighthon.rnr;
 
+import com.therighthon.rnr.common.RNRTags;
 import java.io.IOException;
 import java.nio.file.Path;
-import com.therighthon.afc.AFC;
+import java.util.Objects;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.metadata.pack.PackMetadataSection;
 import net.minecraft.server.packs.repository.Pack;
 import net.minecraft.server.packs.repository.PackSource;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.Level;
 import net.minecraftforge.event.AddPackFindersEvent;
+import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
@@ -73,6 +79,34 @@ public class ModEvents
         catch (IOException e)
         {
             throw new RuntimeException(e);
+        }
+    }
+
+    public static void onUseItemOnBlock(PlayerInteractEvent.RightClickBlock event)
+    {
+        final Level level = event.getLevel();
+        final BlockPos pos = event.getPos();
+        final InteractionResult result;
+        if (event.getEntity() instanceof Player)
+        {
+            if (event.getItemStack().is(RNRTags.Items.MATTOCKS))
+            {
+                // TODO: So, this is kind of egregious, but also I couldn't figure out why my timer block entity wasn't getting set right when I did this in the mattock item
+                result = RNRHelpers.useMattockOn(event.getEntity(), level, pos, event.getHitVec());
+            }
+            else
+            {
+                result = RNRHelpers.blockModRecipeCompatible(level.getBlockState(pos), level, pos, Objects.requireNonNull(event.getEntity()), event.getHand(), event.getHitVec());
+            }
+        }
+        else
+        {
+            result = InteractionResult.FAIL;
+        }
+
+        if (result != InteractionResult.FAIL)
+        {
+            event.setCanceled(true);
         }
     }
 }

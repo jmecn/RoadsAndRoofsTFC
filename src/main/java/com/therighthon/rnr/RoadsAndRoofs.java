@@ -47,6 +47,10 @@ public class RoadsAndRoofs
         RNRRecipeSerializers.RECIPE_SERIALIZERS.register(eventBus);
         RNRCreativeModeTabs.CREATIVE_TABS.register(eventBus);
 
+
+        final IEventBus bus = MinecraftForge.EVENT_BUS;
+        bus.addListener(ModEvents::onUseItemOnBlock);
+
         if (FMLEnvironment.dist == Dist.CLIENT)
         {
             ClientEventHandler.init();

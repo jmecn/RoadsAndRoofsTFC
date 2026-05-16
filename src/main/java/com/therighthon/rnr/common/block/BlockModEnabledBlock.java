@@ -11,6 +11,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 
+// NOTE: This class is now a misnomer, block mod enable blocks no longer exist, all blocks just work
 public class BlockModEnabledBlock extends Block
 {
     private final boolean isTransparent;
@@ -30,10 +31,5 @@ public class BlockModEnabledBlock extends Block
     public boolean isTransparent(BlockState state, BlockView world, BlockPos pos)
     {
         return this.isTransparent;
-    }
-
-    public InteractionResult use(BlockState blockState, Level level, BlockPos pos, Player player, InteractionHand hand, BlockHitResult hit)
-    {
-        return RNRHelpers.blockModRecipeCompatible(blockState, level, pos, player, hand, hit);
     }
 }

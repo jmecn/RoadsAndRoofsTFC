@@ -1,10 +1,14 @@
 package com.therighthon.rnr.common.block;
 
+import com.mojang.datafixers.util.Pair;
+import com.therighthon.rnr.RNRHelpers;
 import com.therighthon.rnr.common.RNRTags;
+import javax.swing.text.html.BlockView;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -41,42 +45,38 @@ public class CrackingWetConcretePathBlock extends WetConcretePathBlock
         level.getBlockEntity(pos, TFCBlockEntities.TICK_COUNTER.get()).ifPresent(counter -> {
             long oldUpdateTick = counter.getLastUpdateTick();
             long ticksSinceUpdate = counter.getTicksSinceUpdate();
-            BlockState oldState = state;
-            //Only update crack info within first 75% of drying process
-            if (ticksSinceUpdate < 0.75 * TICKS_TO_DRY)
-            {
-                //Cracking X - Distance Update
-                final int oldDistanceX = state.getValue(DISTANCE_X);
-                int distanceX = updateDistanceX(level, pos);
-                if (distanceX != oldDistanceX)
-                {
-                    level.setBlockAndUpdate(pos, state.setValue(DISTANCE_X, Math.min(distanceX, MAX_JOINT_DISTANCE)));
-                    counter.setLastUpdateTick(oldUpdateTick);
-                }
 
-                //Cracking Z - Distance Update
-                final int oldDistanceZ = state.getValue(DISTANCE_Z);
-                int distanceZ = updateDistanceZ(level, pos);
-                if (distanceZ != oldDistanceZ)
+            // Cracking X - Set distance if uninitialized and enough info about neighbors
+            if (state.getValue(DISTANCE_X) == 0)
+            {
+                final int distanceX = getDistanceXAndUpdateNeighbors(level, pos);
+                if (distanceX != 0)
                 {
-                    level.setBlockAndUpdate(pos, state.setValue(DISTANCE_Z, Math.min(distanceZ, MAX_JOINT_DISTANCE)));
+                    level.setBlockAndUpdate(pos, state.setValue(DISTANCE_X, distanceX));
                     counter.setLastUpdateTick(oldUpdateTick);
                 }
             }
+
+            //Cracking Z - Set distance if uninitialized and enough info about neighbors
+            if (state.getValue(DISTANCE_Z) == 0)
+            {
+                final int distanceZ = getDistanceZAndUpdateNeighbors(level, pos);
+                if (distanceZ != 0)
+                {
+                    level.setBlockAndUpdate(pos, state.setValue(DISTANCE_Z, distanceZ));
+                    counter.setLastUpdateTick(oldUpdateTick);
+                }
+            }
+
             // Drying
-            else if (ticksSinceUpdate > TICKS_TO_DRY)
+            if (ticksSinceUpdate > WetConcretePathBlock.TICKS_TO_DRY)
             {
-                level.setBlockAndUpdate(pos, Math.max(state.getValue(DISTANCE_X), state.getValue(DISTANCE_Z)) >= MAX_JOINT_DISTANCE ? getOutputStateCracked(state) : getOutputState(state));
-            }
-
-            if (level.getBlockState(pos) != oldState)
-            {
+                level.setBlockAndUpdate(pos, Math.max(state.getValue(DISTANCE_X), state.getValue(DISTANCE_Z)) >= 3 ? getOutputStateCracked(state) : getOutputState(state));
                 final BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
                 for (Direction d : Direction.Plane.HORIZONTAL)
                 {
                     cursor.setWithOffset(pos, d);
                     final BlockState stateAt = level.getBlockState(cursor);
-                    //TODO: Could be cleaner if this class and the normal wet concrete class extended a single class
                     if (state.getBlock() instanceof CrackingWetConcretePathBlock || stateAt.getBlock() instanceof WetConcretePathControlJointBlock)
                     {
                         level.scheduleTick(cursor, stateAt.getBlock(), 1);
@@ -84,6 +84,56 @@ public class CrackingWetConcretePathBlock extends WetConcretePathBlock
                 }
             }
         });
+    }
+
+    @Override
+    public void onRemove(BlockState state, Level level, BlockPos pos, BlockState newState, boolean isMoving)
+    {
+        // Removing this block effects cracking behavior of neighbors unless it is removed by curing or changed to another crackable concrete block
+        if (!(newState.getBlock() instanceof CrackingWetConcretePathBlock)
+            && newState != getOutputState(state) && newState != getOutputStateCracked(state))
+            RNRHelpers.updateWetCrackingConcrete(level, pos);
+        super.onRemove(state, level, pos, newState, isMoving);
+    }
+
+    @Override
+    public void onPlace(BlockState state, Level level, BlockPos pos, BlockState oldState, boolean movedByPiston)
+    {
+        // So, when we place a new cracking wet concrete block, if it is adjacent to an existing wet concrete block, that may influence
+        // the edge distance of said block.
+        if (!(oldState.getBlock() instanceof CrackingWetConcretePathBlock))
+        {
+            // Probably it isn't worthwhile to use pairs just to make the flow of code feel better, but what do I know
+            for (Pair pair : new Pair[] {
+                Pair.of(Direction.WEST, RNRBlockStateProperties.DISTANCE_X),
+                Pair.of(Direction.EAST, RNRBlockStateProperties.DISTANCE_X),
+                Pair.of(Direction.NORTH, RNRBlockStateProperties.DISTANCE_Z),
+                Pair.of(Direction.SOUTH, RNRBlockStateProperties.DISTANCE_Z)})
+            {
+                final Direction dir = (Direction) pair.getFirst();
+                final BlockPos posN1 = pos.relative(dir);
+                final BlockState stateN1 = level.getBlockState(posN1);
+                if (stateN1.getBlock() instanceof CrackingWetConcretePathBlock)
+                {
+                    // We check the distance property here so that we don't waste time on blocks placed in the same bucket as this
+                    final IntegerProperty distProp = (IntegerProperty) pair.getSecond();
+                    if (stateN1.getValue(distProp) > 0)
+                    {
+                        level.setBlockAndUpdate(posN1, stateN1.setValue(distProp, 0));
+                        level.scheduleTick(posN1, stateN1.getBlock(), 21);
+
+                        final BlockPos posN2 = posN1.relative(dir);
+                        final BlockState stateN2 = level.getBlockState(posN2);
+                        if (stateN2.getBlock() instanceof CrackingWetConcretePathBlock)
+                        {
+                            level.setBlockAndUpdate(posN2, stateN2.setValue(distProp, 0));
+                            level.scheduleTick(posN2, stateN2.getBlock(), 21);
+                        }
+                    }
+                }
+            }
+            super.onPlace(state, level, pos, oldState, movedByPiston);
+        }
     }
 
     //TODO: Make this use actual recipes rather than hard-code?
@@ -103,75 +153,55 @@ public class CrackingWetConcretePathBlock extends WetConcretePathBlock
         }
     }
 
-    //Distance checks won't care about control joint orientation, because if the cj is oriented wrong, the block would need to
-    //ask the cj how far it is from a cj, which isn't a blockstate for cjs and I don't want to quadruple the CJ blockstate count rn
-    private int getDistanceX(BlockState neighbor)
+    private int getDistanceXAndUpdateNeighbors(LevelAccessor level, BlockPos pos)
     {
-        Block block = neighbor.getBlock();
-        if (Helpers.isBlock(block, RNRTags.Blocks.WET_CONCRETE_ROADS) && !Helpers.isBlock(neighbor.getBlock(), RNRTags.Blocks.CONCRETE_CONTROL_JOINTS))
+        // We need to loop in a custom order to check closer blocks first, so we can just return when we find somehting
+        for (int dx : new int[] {1, -1, 2, -2})
         {
-            return neighbor.getValue(DISTANCE_X);
-        }
-        else
-        {
-            return 0;
-        }
-    }
-
-    private int getDistanceZ(BlockState neighbor)
-    {
-        Block block = neighbor.getBlock();
-        if (Helpers.isBlock(block, RNRTags.Blocks.WET_CONCRETE_ROADS) && !Helpers.isBlock(neighbor.getBlock(), RNRTags.Blocks.CONCRETE_CONTROL_JOINTS))
-        {
-            return neighbor.getValue(DISTANCE_Z);
-        }
-        else
-        {
-            return 0;
-        }
-    }
-
-    @Override
-    public BlockState updateShape(BlockState state, Direction facing, BlockState facingState, LevelAccessor level, BlockPos currentPos, BlockPos facingPos)
-    {
-        final int distanceX = getDistanceX(facingState) + 1;
-        final int distanceZ = getDistanceZ(facingState) + 1;
-        if (distanceX != 1 || state.getValue(DISTANCE_X) != distanceX || distanceZ != 1 || state.getValue(DISTANCE_Z) != distanceZ)
-        {
-            level.scheduleTick(currentPos, this, 1);
-        }
-        return state;
-    }
-
-    private int updateDistanceX(LevelAccessor level, BlockPos pos)
-    {
-        int distance = 1 + MAX_JOINT_DISTANCE;
-        BlockPos.MutableBlockPos mutablePos = new BlockPos.MutableBlockPos();
-        for (Direction direction : new Direction[] {Direction.EAST, Direction.WEST})
-        {
-            mutablePos.set(pos).move(direction);
-            distance = Math.min(distance, getDistanceX(level.getBlockState(mutablePos)) + 1);
-            if (distance == 1)
+            final BlockPos neighborPos = pos.offset(dx, 0, 0);
+            final BlockState neighborState = level.getBlockState(neighborPos);
+            // If a block is found that isn't wet concrete, return the distance to that block
+            // This will handle all possible states for the block at the input pos
+            if (!(neighborState.getBlock() instanceof CrackingWetConcretePathBlock neighborBlock))
             {
-                break;
+                return Math.abs(dx);
+            }
+
+            final int neighborDistance = neighborState.getValue(DISTANCE_X);
+
+            // Check for uninitialized neighbors, and schedule ticks for any we find
+            if (neighborDistance == 0)
+            {
+                level.scheduleTick(neighborPos, neighborBlock, 1);
             }
         }
-        return distance;
+        // If the above loop failed to find a something besides a cracking wet concrete block, distance must be 3+
+        return 3;
     }
 
-    private int updateDistanceZ(LevelAccessor level, BlockPos pos)
+    private int getDistanceZAndUpdateNeighbors(LevelAccessor level, BlockPos pos)
     {
-        int distance = 1 + MAX_JOINT_DISTANCE;
-        BlockPos.MutableBlockPos mutablePos = new BlockPos.MutableBlockPos();
-        for (Direction direction : new Direction[] {Direction.NORTH, Direction.SOUTH})
+        // We need to loop in a custom order to check closer blocks first, so we can just return when we find somehting
+        for (int dz : new int[] {1, -1, 2, -2})
         {
-            mutablePos.set(pos).move(direction);
-            distance = Math.min(distance, getDistanceZ(level.getBlockState(mutablePos)) + 1);
-            if (distance == 1)
+            final BlockPos neighborPos = pos.offset(0, 0, dz);
+            final BlockState neighborState = level.getBlockState(neighborPos);
+            // If a block is found that isn't wet concrete, return the distance to that block
+            // This will handle all possible states for the block at the input pos
+            if (!(neighborState.getBlock() instanceof CrackingWetConcretePathBlock neighborBlock))
             {
-                break;
+                return Math.abs(dz);
+            }
+
+            final int neighborDistance = neighborState.getValue(DISTANCE_Z);
+
+            // Check for uninitialized neighbors, and schedule ticks for any we find
+            if (neighborDistance == 0)
+            {
+                level.scheduleTick(neighborPos, neighborBlock, 1);
             }
         }
-        return distance;
+        // If the above loop failed to find a something besides a cracking wet concrete block, distance must be 3+
+        return 3;
     }
 }
